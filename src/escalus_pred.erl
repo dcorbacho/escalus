@@ -66,8 +66,8 @@
          has_identity/3,
          stanza_timeout/1,
          is_stream_end/1,
-         is_bosh_report/2
-     ]).
+         is_bosh_report/2,
+         is_enabled/1]).
 
 -include("include/escalus.hrl").
 -include("escalus_xmlns.hrl").
@@ -346,6 +346,11 @@ is_bosh_report(Rid, #xmlel{name = <<"body">>} = Body) ->
     andalso
     exml_query:attr(Body, <<"time">>) /= undefined;
 is_bosh_report(_, _) ->
+    false.
+
+is_enabled(#xmlel{name = <<"enabled">>} = Stanza) ->
+    ?NS_STREAM_MGNT_3 == exml_query:attr(Stanza, <<"xmlns">>);
+is_enabled(_) ->
     false.
 
 %%--------------------------------------------------------------------
