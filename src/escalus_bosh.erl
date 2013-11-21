@@ -62,7 +62,8 @@
                 active = true,
                 replies = [],
                 event_client,
-                client}).
+                client,
+                on_reply}).
 
 %%%===================================================================
 %%% API
@@ -216,11 +217,14 @@ init([Args, Owner]) ->
     Path = proplists:get_value(path, Args, <<"/http-bind">>),
     Wait = proplists:get_value(bosh_wait, Args, ?DEFAULT_WAIT),
     EventClient = proplists:get_value(event_client, Args),
+    OnReplyFun = proplists:get_value(on_reply, Args, fun(_) -> ok end),
+    OnConnectFun = proplists:get_value(on_connect, Args, fun(_) -> ok end),
     HostStr = binary_to_list(Host),
     {MS, S, MMS} = now(),
     InitRid = MS * 1000000 * 1000000 + S * 1000000 + MMS,
     {ok, Parser} = exml_stream:new_parser(),
-    {ok, Client} = fusco:start({HostStr, Port, false}, []),
+    {ok, Client} = fusco:start({HostStr, Port, false},
+                               [{on_connect, OnConnectFun}]),
     {ok, #state{owner = Owner,
                 url = Path,
                 parser = Parser,
@@ -228,7 +232,8 @@ init([Args, Owner]) ->
                 keepalive = proplists:get_value(keepalive, Args, true),
                 wait = Wait,
                 event_client = EventClient,
-                client = Client}}.
+                client = Client,
+                on_reply = OnReplyFun}}.
 
 
 handle_call(get_transport, _From, State) ->
@@ -313,24 +318,25 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Helpers
 %%%===================================================================
 
-request(#transport{socket = {Client, Path}}, Body) ->
+request(#transport{socket = {Client, Path}}, Body, OnReplyFun) ->
     Headers = [{"Content-Type", "text/xml; charset=utf-8"}],
-    {ok, _Status, _Headers, RBody, _Size, _Time} =
+    {ok, _Status, _Headers, RBody, _Size, _Time} = Reply =
         fusco:request(Client, Path, 'POST', Headers, exml:to_iolist(Body), 2, infinity),
+    OnReplyFun(Reply),
     RBody.
 
-send(Transport, Body, #state{requests = Requests} = S) ->
+send(Transport, Body, #state{requests = Requests, on_reply = OnReplyFun} = S) ->
     Ref = make_ref(),
     Self = self(),
     AsyncReq = fun() ->
-            {ok, Reply} = request(Transport, Body),
+            {ok, Reply} = request(Transport, Body, OnReplyFun),
             Self ! {http_reply, Ref, Reply, Transport}
     end,
     NewRequests = [{Ref, proc_lib:spawn_link(AsyncReq)} | Requests],
     S#state{rid = S#state.rid+1, requests = NewRequests}.
 
-sync_send(Transport, Body, S=#state{}) ->
-    {ok, Reply} = request(Transport, Body),
+sync_send(Transport, Body, S=#state{on_reply = OnReplyFun}) ->
+    {ok, Reply} = request(Transport, Body, OnReplyFun),
     {ok, Reply, S#state{rid = S#state.rid+1}}.
 
 send0(Transport, Elem, State) ->
