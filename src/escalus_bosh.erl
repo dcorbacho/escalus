@@ -223,8 +223,10 @@ init([Args, Owner]) ->
     {MS, S, MMS} = now(),
     InitRid = MS * 1000000 * 1000000 + S * 1000000 + MMS,
     {ok, Parser} = exml_stream:new_parser(),
-    {ok, Client} = fusco:start({HostStr, Port, false},
-                               [{on_connect, OnConnectFun}]),
+    {ok, Client} = fusco_cp:start({HostStr, Port, false},
+                                  [{on_connect, OnConnectFun}],
+                                  %% Max two connections as per BOSH rfc
+                                  2),
     {ok, #state{owner = Owner,
                 url = Path,
                 parser = Parser,
@@ -306,7 +308,7 @@ handle_info(_, State) ->
 
 
 terminate(_Reason, #state{client = Client, parser = Parser}) ->
-    fusco:disconnect(Client),
+    fusco_cp:stop(Client),
     exml_stream:free_parser(Parser).
 
 
@@ -321,7 +323,8 @@ code_change(_OldVsn, State, _Extra) ->
 request(#transport{socket = {Client, Path}}, Body, OnReplyFun) ->
     Headers = [{<<"Content-Type">>, <<"text/xml; charset=utf-8">>}],
     Reply =
-        fusco:request(Client, Path, "POST", Headers, exml:to_iolist(Body), 2, infinity),
+        fusco_cp:request(Client, Path, "POST", Headers, exml:to_iolist(Body),
+                         2, infinity),
     OnReplyFun(Reply),
     {ok, {_Status, _Headers, RBody, _Size, _Time}} = Reply,
     {ok, RBody}.
