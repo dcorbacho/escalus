@@ -1,6 +1,6 @@
 # Escalus as a standalone application
 
-It't possible to use Escalus as a standalone application,
+It's possible to use Escalus as a standalone application,
 i.e. outside a Common Test test suite (and without any reliance
 on the `common_test` application and its modules).
 To do so some prerequisites must be met.
@@ -41,8 +41,9 @@ after loading Escalus:
     > application:set_env(escalus, common_test, false).
     > application:set_env(escalus, config_file, "/absolute/or/relative/path").
 
-Keep in mind setting them before calling `application:start(escalus)`
-will overwrite the values with stuff from `escalus.app`.
+Keep in mind that calling `application:start(escalus)` will overwrite
+the values with stuff from `escalus.app`.
+Set the variables after the application is started.
 
 ## Config file location
 
@@ -63,3 +64,13 @@ In case of a standard Git checkout the project directory is simply `escalus`.
     │   └── ...
     ├── src/
     └── ...
+
+## Example shell session
+
+    application:start(escalus).
+    application:set_env(escalus, common_test, false).
+    {ok, Config} = file:consult("test.config").
+    CarolSpec = escalus_users:get_options(Config, carol).
+    {ok, Carol, _, _} = escalus_connection:start(CarolSpec).
+    escalus_connection:send(Carol, escalus_stanza:chat_to(alice, "hi")).
+    escalus_connection:stop(Carol).

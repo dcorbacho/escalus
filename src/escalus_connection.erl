@@ -35,7 +35,8 @@ start(Props) ->
            maybe_use_compression,
            authenticate,
            bind,
-           session]).
+           session,
+           maybe_stream_management]).
 
 %% Usage:
 %%
@@ -64,11 +65,11 @@ start(Props0, Steps) ->
     case connect(Props0) of
         {ok, Conn, Props} ->
             try
-                {Conn1, Props1, _} = lists:foldl(fun connection_step/2,
-                                                 {Conn, Props, []},
-                                                 [prepare_step(Step)
-                                                  || Step <- Steps]),
-                {ok, Conn1, Props1}
+                {Conn1, Props1, Features} = lists:foldl(fun connection_step/2,
+                                                        {Conn, Props, []},
+                                                        [prepare_step(Step)
+                                                         || Step <- Steps]),
+                {ok, Conn1, Props1, Features}
             catch
                 throw:{connection_step_failed, _Details, _Reason} = Error ->
                     {error, Error}

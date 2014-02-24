@@ -31,6 +31,7 @@
          is_iq_get/1,
          is_iq_error/1,
          is_iq_result/1,
+         is_iq_result/2,
          is_presence/1,
          is_presence_stanza/1, % backwards compatibility
          is_presence_type/2, %% backwards compatibility
@@ -66,8 +67,15 @@
          has_identity/3,
          stanza_timeout/1,
          is_stream_end/1,
-         is_bosh_report/2
-     ]).
+         is_bosh_report/2,
+         is_enabled/1, is_enabled/2,
+         is_failed/1,
+         is_ack/1, is_ack/2,
+         is_ack_request/1,
+         is_resumed/2,
+         has_ns/2]).
+
+-export(['not'/1]).
 
 -include("include/escalus.hrl").
 -include("escalus_xmlns.hrl").
@@ -155,6 +163,11 @@ is_iq_set(Stanza) -> is_iq(<<"set">>, Stanza).
 is_iq_get(Stanza) -> is_iq(<<"get">>, Stanza).
 is_iq_error(Stanza) -> is_iq(<<"error">>, Stanza).
 is_iq_result(Stanza) -> is_iq(<<"result">>, Stanza).
+
+is_iq_result(QueryStanza, ResultStanza) ->
+    QueryId = exml_query:attr(QueryStanza, <<"id">>),
+    ResultId = exml_query:attr(ResultStanza, <<"id">>),
+    is_iq_result(ResultStanza) andalso QueryId == ResultId.
 
 is_presence_with_show(Show, Presence) ->
     is_presence(Presence)
@@ -347,6 +360,76 @@ is_bosh_report(Rid, #xmlel{name = <<"body">>} = Body) ->
     exml_query:attr(Body, <<"time">>) /= undefined;
 is_bosh_report(_, _) ->
     false.
+
+is_enabled(Opts, Stanza) ->
+    is_enabled(Stanza)
+    andalso case proplists:is_defined(resume, Opts) of
+                false ->
+                    true;
+                true ->
+                    lists:member(exml_query:attr(Stanza, <<"resume">>),
+                                 [<<"true">>, <<"1">>])
+            end.
+
+is_enabled(#xmlel{name = <<"enabled">>} = Stanza) ->
+    has_ns(?NS_STREAM_MGNT_3, Stanza);
+is_enabled(_) ->
+    false.
+
+is_failed(#xmlel{name = <<"failed">>} = Stanza) ->
+    has_ns(?NS_STREAM_MGNT_3, Stanza)
+    andalso
+    begin
+        Unexpected = exml_query:subelement(Stanza, <<"unexpected-request">>),
+        is_unexpected_request(Unexpected)
+    end;
+is_failed(_) ->
+    false.
+
+is_unexpected_request(#xmlel{name = <<"unexpected-request">>} = Stanza) ->
+    has_ns(?NS_STANZA_ERRORS, Stanza);
+is_unexpected_request(_) ->
+    false.
+
+is_ack(#xmlel{name = <<"a">>} = Stanza) ->
+    has_ns(?NS_STREAM_MGNT_3, Stanza);
+is_ack(_) ->
+    false.
+
+is_ack(Handled, #xmlel{name = <<"a">>} = Stanza) ->
+    has_ns(?NS_STREAM_MGNT_3, Stanza)
+    andalso
+    Handled == binary_to_integer(exml_query:attr(Stanza, <<"h">>));
+is_ack(_, _) ->
+    false.
+
+is_ack_request(#xmlel{name = <<"r">>} = Stanza) ->
+    has_ns(?NS_STREAM_MGNT_3, Stanza);
+is_ack_request(_) ->
+    false.
+
+is_resumed(SMID, #xmlel{name = <<"resumed">>} = Stanza) ->
+    has_ns(?NS_STREAM_MGNT_3, Stanza)
+    andalso
+    SMID == exml_query:attr(Stanza, <<"previd">>)
+    andalso
+    exml_query:attr(Stanza, <<"h">>) /= undefined;
+is_resumed(_, _) ->
+    false.
+
+has_ns(NS, Stanza) ->
+    NS == exml_query:attr(Stanza, <<"xmlns">>).
+
+%%--------------------------------------------------------------------
+%% Functors
+%%--------------------------------------------------------------------
+
+'not'(Pred) when is_function(Pred, 1) ->
+    fun (Arg) -> not Pred(Arg) end;
+'not'(Pred) when is_function(Pred, 2) ->
+    fun (Arg1, Arg2) -> not Pred(Arg1, Arg2) end;
+'not'(Pred) when is_function(Pred, 3) ->
+    fun (Arg1, Arg2, Arg3) -> not Pred(Arg1, Arg2, Arg3) end.
 
 %%--------------------------------------------------------------------
 %% Helpers

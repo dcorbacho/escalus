@@ -35,7 +35,8 @@
          create_user/2,
          verify_creation/1,
          delete_user/2,
-         get_usp/2]).
+         get_usp/2,
+         is_mod_register_enabled/1]).
 
 % deprecated API
 -export([create_user/1,
@@ -59,8 +60,13 @@ create_users(Config) ->
 
 create_users(Config, Who) ->
     Users = get_users(Who),
-    CreationResults = [create_user(Config, User) || User <- Users],
-    lists:foreach(fun verify_creation/1, CreationResults),
+    case is_mod_register_enabled(Config) of
+        true ->
+            CreationResults = [create_user(Config, User) || User <- Users],
+            lists:foreach(fun verify_creation/1, CreationResults);
+        _->
+            escalus_ejabberd:create_users(Config, Who)
+    end,
     [{escalus_users, Users}] ++ Config.
 
 delete_users(Config) ->
@@ -73,7 +79,13 @@ delete_users(Config, Who) ->
         _ ->
             get_users(Who)
     end,
-    [delete_user(Config, User) || User <- Users].
+
+    case is_mod_register_enabled(Config) of
+        true ->
+            [delete_user(Config, User) || User <- Users];
+        _ ->
+            escalus_ejabberd:delete_users(Config, Users)
+    end.
 
 get_jid(Config, User) ->
     Username = get_username(Config, User),
@@ -87,13 +99,13 @@ get_password(Config, User) ->
     get_defined_option(Config, User, password, escalus_password).
 
 get_host(Config, User) ->
-    get_user_option(host, User, escalus_host, Config, <<"localhost">>).
+    get_user_option(host, User, escalus_host, Config, get_server(Config, User)).
 
 get_port(Config, User) ->
     get_user_option(port, User, escalus_port, Config, 5222).
 
 get_server(Config, User) ->
-    get_user_option(server, User, escalus_server, Config, get_host(Config, User)).
+    get_user_option(server, User, escalus_server, Config, <<"localhost">>).
 
 get_wspath(Config, User) ->
     get_user_option(wspath, User, escalus_wspath, Config, undefined).
@@ -120,6 +132,8 @@ get_usp(Config, User) ->
      get_server(Config, User),
      get_password(Config, User)].
 
+%% TODO: get_options/2 and get_userspec/2 are redundant - remove one
+%% TODO: this list of options should be complete and formal!
 get_options(Config, User) ->
     [{username, get_username(Config, User)},
      {server, get_server(Config, User)},
@@ -149,7 +163,6 @@ update_userspec(Config, UserName, Option, Value) ->
     NewUsers = lists:keystore(UserName, 1, Users, {UserName, UserSpec}),
     lists:keystore(escalus_users, 1, Config, {escalus_users, NewUsers}).
 
-%%% XXX: this is so ugly...
 get_users(all) ->
     escalus_ct:get_config(escalus_users);
 get_users({by_name, Names}) ->
@@ -163,9 +176,9 @@ get_user_by_name(Name) ->
 
 create_user(Config, {_Name, UserSpec}) ->
     ClientProps = get_options(Config, UserSpec),
-    {ok, Conn, ClientProps} = escalus_connection:start(ClientProps,
-                                                       [start_stream,
-                                                        maybe_use_ssl]),
+    {ok, Conn, ClientProps, _} = escalus_connection:start(ClientProps,
+                                                          [start_stream,
+                                                           maybe_use_ssl]),
     escalus_connection:send(Conn, escalus_stanza:get_registration_fields()),
     {ok, result, RegisterInstrs} = wait_for_result(Conn),
     Answers = get_answers(ClientProps, RegisterInstrs),
@@ -186,11 +199,29 @@ verify_creation({error, Error, Raw}) ->
 
 delete_user(Config, {_Name, UserSpec}) ->
     Options = get_options(Config, UserSpec),
-    {ok, Conn, _} = escalus_connection:start(Options),
+    {ok, Conn, _, _} = escalus_connection:start(Options),
     escalus_connection:send(Conn, escalus_stanza:remove_account()),
     Result = wait_for_result(Conn),
     escalus_connection:stop(Conn),
     Result.
+
+is_mod_register_enabled(Config) ->
+    Server = escalus_config:get_config(escalus_server, Config, <<"localhost">>),
+    Host = escalus_config:get_config(escalus_host, Config, Server),
+    Port = escalus_config:get_config(escalus_port, Config, 5222),
+    ClientProps = [{server, Server},
+                   {host, Host},
+                   {port, Port}],
+    {ok, Conn, ClientProps, _} = escalus_connection:start(ClientProps,
+                                                          [start_stream,
+                                                           maybe_use_ssl]),
+    escalus_connection:send(Conn, escalus_stanza:get_registration_fields()),
+    case wait_for_result(Conn) of
+        {error, _, _} ->
+            false;
+        _ ->
+            true
+    end.
 
 %%--------------------------------------------------------------------
 %% Deprecated API

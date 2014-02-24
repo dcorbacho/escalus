@@ -99,9 +99,9 @@ init([Args, Owner]) ->
     Host = proplists:get_value(host, Args, <<"localhost">>),
     Port = proplists:get_value(port, Args, 5222),
     EventClient = proplists:get_value(event_client, Args),
-    HostStr = binary_to_list(Host),
+    Address = host_to_inet(Host),
     Opts = [binary, {active, once}],
-    {ok, Socket} = gen_tcp:connect(HostStr, Port, Opts),
+    {ok, Socket} = gen_tcp:connect(Address, Port, Opts),
     {ok, Parser} = exml_stream:new_parser(),
     {ok, #state{owner = Owner,
                 socket = Socket,
@@ -112,7 +112,7 @@ handle_call(get_transport, _From, State) ->
     {reply, transport(State), State};
 handle_call({upgrade_to_tls, SSLOpts}, _From, #state{socket = Socket} = State) ->
     ssl:start(),
-    SSLOpts1 = [{protocol, tlsv1}, {reuse_sessions, true}],
+    SSLOpts1 = [{reuse_sessions, true}],
     SSLOpts2 = lists:keymerge(1, lists:keysort(1, SSLOpts),
                               lists:keysort(1, SSLOpts1)),
     {ok, Socket2} = ssl:connect(Socket, SSLOpts2),
@@ -225,3 +225,10 @@ wait_until_closed(Socket) ->
     after ?WAIT_FOR_SOCKET_CLOSE_TIMEOUT ->
             ok
     end.
+
+-spec host_to_inet(tuple() | atom() | list() | binary())
+    -> inet:ip_address() | inet:hostname().
+host_to_inet({_,_,_,_} = IP4) -> IP4;
+host_to_inet({_,_,_,_,_,_,_,_} = IP6) -> IP6;
+host_to_inet(Address) when is_list(Address) orelse is_atom(Address) -> Address;
+host_to_inet(BAddress) when is_binary(BAddress) -> binary_to_list(BAddress).

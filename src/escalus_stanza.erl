@@ -67,6 +67,12 @@
          search_fields_iq/1,
          search_iq/2]).
 
+%% XEP-0198: Stream Management
+-export([enable_sm/0, enable_sm/1,
+         sm_request/0,
+         sm_ack/1,
+         resume/2]).
+
 -export([stream_start/2,
          stream_end/0,
          starttls/0,
@@ -91,6 +97,7 @@
 
 -include("escalus.hrl").
 -include("escalus_xmlns.hrl").
+-include("no_binary_to_integer.hrl").
 -include_lib("exml/include/exml_stream.hrl").
 
 %%--------------------------------------------------------------------
@@ -457,6 +464,31 @@ auth_response_stanza(Body) ->
     #xmlel{name = <<"response">>,
            attrs = [{<<"xmlns">>, ?NS_SASL}],
            children = Body}.
+
+enable_sm() ->
+    #xmlel{name = <<"enable">>,
+           attrs = [{<<"xmlns">>, ?NS_STREAM_MGNT_3}]}.
+
+enable_sm(Opts) ->
+    #xmlel{name = <<"enable">>,
+           attrs = [{<<"xmlns">>, ?NS_STREAM_MGNT_3}]
+                    ++ [{<<"resume">>, <<"true">>}
+                        || true == proplists:is_defined(resume, Opts)]}.
+
+sm_request() ->
+    #xmlel{name = <<"r">>,
+           attrs = [{<<"xmlns">>, ?NS_STREAM_MGNT_3}]}.
+
+sm_ack(H) ->
+    #xmlel{name = <<"a">>,
+           attrs = [{<<"xmlns">>, ?NS_STREAM_MGNT_3},
+                    {<<"h">>, integer_to_binary(H)}]}.
+
+resume(SMID, PrevH) ->
+    #xmlel{name = <<"resume">>,
+           attrs = [{<<"xmlns">>, ?NS_STREAM_MGNT_3},
+                    {<<"previd">>, SMID},
+                    {<<"h">>, integer_to_binary(PrevH)}]}.
 
 %%--------------------------------------------------------------------
 %% Helpers
